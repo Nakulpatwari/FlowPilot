@@ -1,113 +1,215 @@
-# FlowPilot — Autonomous Invoice Operations Worker
+# FlowPilot — Autonomous Company Operations Agent
 
-FlowPilot is a local-first prototype of an AI operations worker. It accepts a task, extracts invoice information from a local PDF/text document, checks for duplicates, optionally pauses for human approval, writes a finance record, and independently reads the record back to verify the outcome.
+**A local-first AI employee prototype that executes finance workflows, enforces human approval, and verifies outcomes.**
 
-## What is implemented in this prototype
+FlowPilot turns a natural-language request into an inspectable execution workflow. It reads invoice documents, extracts structured information, checks for duplicates, applies approval policies, writes to a PostgreSQL-backed finance sandbox, and independently verifies the persisted result.
 
-- FastAPI API and a browser dashboard served by the API.
-- PostgreSQL persistence in Docker Compose; SQLite is supported for local tests.
-- Invoice extraction from text files and text-based PDFs.
-- Natural-language task intake with a deterministic parser that works without an LLM.
-- Optional Ollama integration for task interpretation (disabled by default).
-- Tool execution with bounded retry for transient failures.
-- Duplicate detection and database uniqueness constraints.
-- Human approval checkpoint for invoices above a configurable threshold.
-- Independent read-after-write verification.
-- Persistent task state and audit events.
-- Unit/integration tests.
+Rather than stopping at a generated plan, FlowPilot attempts the operation, records its decisions, and reports whether the outcome was verified.
 
-## Scope and safety
+## Why FlowPilot?
 
-This is a sandbox prototype. It does not connect to real finance systems or real company credentials. It does not pay invoices or send external messages. The only write target is the local FlowPilot finance sandbox. Documents are untrusted input; extracted content is treated as data, not as instructions.
+AI employees need more than language generation. They need to use tools, respect permissions, handle failures, involve humans at the right moments, and prove that actions succeeded.
 
-## Quick start (Windows + Docker Desktop)
+FlowPilot explores these requirements through a focused, runnable invoice-operations workflow.
 
-1. Install and start Docker Desktop, using the Linux container engine.
-2. Open PowerShell in the extracted `flowpilot` directory.
-3. Copy the example environment file:
+### Key capabilities
 
-   ```powershell
-   Copy-Item .env.example .env
-   ```
+- **Task intake and planning:** Accepts a natural-language request and creates an explicit execution plan.
+- **Document processing:** Extracts invoice fields from supported text documents and text-based PDFs.
+- **Registered tools:** Exposes tools with declared arguments and permission requirements.
+- **Policy enforcement:** Applies invoice-write rules outside the language model.
+- **Human-in-the-loop approval:** Pauses high-value invoice writes until a reviewer approves or rejects the task.
+- **Duplicate prevention:** Checks existing records and uses database uniqueness constraints as a final safeguard.
+- **Independent verification:** Reads persisted data back from the database and checks key fields before marking a write successful.
+- **Auditable execution:** Persists task states and events for extraction, policy decisions, approvals, writes, retries, verification, and completion.
+- **Optional local LLM:** Supports Ollama-based task interpretation; deterministic parsing remains the default.
+- **Dockerized environment:** Runs the API and PostgreSQL using Docker Compose.
 
-4. Start the app and PostgreSQL:
+## Execution lifecycle
 
-   ```powershell
-   docker compose up --build
-   ```
+```text
+Natural-language request
+          |
+          v
+    Understand task
+          |
+          v
+   Create execution plan
+          |
+          v
+    Read invoice document
+          |
+          v
+    Extract invoice fields
+          |
+          v
+     Check for duplicate
+          |
+          v
+    Evaluate write policy
+          |
+          v
+  Approval required? ---- Yes ---> Await human decision
+          |                           |
+          No                     Approve / Reject
+          |                           |
+          +---------------------------+
+                      |
+               If authorized
+                      |
+                      v
+             Write finance record
+                      |
+                      v
+          Read back from database
+                      |
+                      v
+          Verify persisted fields
+                      |
+                      v
+             Record final outcome
+```
 
-5. Open `http://localhost:8000`.
-6. Try the sample task:
+Rejected, invalid, or unverified operations must not be represented as successful completion. Duplicate invoices can complete without another write when the existing record is found and verified.
 
-   `Process the latest invoice from Acme Supplies`
+## Architecture
 
-7. To view API docs, open `http://localhost:8000/docs`.
+```text
+Dashboard / REST API
+         |
+         v
+      FastAPI
+         |
+         v
+    Task runtime
+         |
+         +---- Task interpretation
+         |
+         +---- Tool registry
+         |       +-- Document reader
+         |       +-- Invoice extractor
+         |       +-- Optional browser inspection
+         |
+         +---- Policy and approval gate
+         |
+         +---- Invoice persistence
+         |
+         +---- Independent verification
+         |
+         +---- Audit events
+                    |
+                    v
+               PostgreSQL
+```
 
-Stop the services with `Ctrl+C`, then:
+**Technology stack**
+
+| Component | Technology |
+|---|---|
+| API | Python, FastAPI |
+| Persistence | PostgreSQL, SQLAlchemy |
+| Local tests | SQLite, pytest |
+| Containerization | Docker, Docker Compose |
+| Validation | Pydantic |
+| Optional LLM | Ollama |
+| Optional browser connector | Playwright |
+
+The current task runtime is synchronous. The optional browser-inspection tool is registered separately and is not required by the invoice workflow.
+
+## Quick start
+
+### Prerequisites
+
+- Windows with Docker Desktop, or another environment supporting Docker Compose
+- Git, if cloning the repository
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Nakulpatwari/FlowPilot.git
+cd FlowPilot
+```
+
+### 2. Configure the environment
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Review `.env` and use local development values only. Never commit `.env` or real credentials.
+
+### 3. Start the application
+
+```powershell
+docker compose up --build
+```
+
+If local port `5432` is already occupied, change only the host-side PostgreSQL port mapping in `docker-compose.yml`, for example from `5432:5432` to `5433:5432`. Keep the internal database connection pointed at the Compose service on port `5432`.
+
+### 4. Open FlowPilot
+
+- Dashboard: http://localhost:8000
+- Interactive API documentation: http://localhost:8000/docs
+- Health check: http://localhost:8000/api/health
+- Registered tools: http://localhost:8000/api/tools
+
+### 5. Try the demo
+
+Submit the following request through the dashboard:
+
+`Process the latest invoice from Acme Supplies`
+
+Follow the task status and execution events. Depending on the invoice and configured policy, the task may complete, identify an existing record, fail validation, or pause for approval.
+
+Stop the application with `Ctrl+C`. To stop and remove the containers while preserving the database volume:
 
 ```powershell
 docker compose down
 ```
 
-To remove the local database volume and reset the sandbox (destructive):
+To delete the local demo database volume as well, use `docker compose down -v`. **This is destructive and removes persisted database data.**
 
-```powershell
-docker compose down -v
-```
+## Run the automated tests
 
-## Run tests
-
-The tests use an isolated SQLite database and do not require Docker:
+The tests use an isolated SQLite database and do not require a running PostgreSQL instance.
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 $env:DATABASE_URL = "sqlite:///./test_flowpilot.db"
-python -m pytest -q
+python -m pytest tests -v
 ```
 
-If PowerShell blocks activation, use:
+If PowerShell blocks virtual-environment activation:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 ```
 
-## Optional local LLM with Ollama
+The current test suite contains nine tests covering high-value approval, duplicate handling, rejection, missing required invoice information, audit persistence, tool permissions, policy enforcement, and tool discovery.
 
-The deterministic task parser is the default and works without a model. To experiment with Ollama:
-
-1. Install Ollama separately and pull a model suitable for your machine, for example `ollama pull qwen2.5:3b`.
-2. Set `OLLAMA_ENABLED=true` in `.env`.
-3. Set `OLLAMA_MODEL=qwen2.5:3b`.
-4. Ensure the Ollama service is reachable from the API container. With Docker Desktop, set `OLLAMA_BASE_URL=http://host.docker.internal:11434`.
-5. Restart `docker compose up --build`.
-
-When enabled, the optional model is used to interpret task intent into a constrained JSON shape. Tool execution, authorization, duplicate checks and verification remain in application code. The app falls back to deterministic parsing if the model is unavailable or returns invalid output.
-
-## Demo workflow
-
-1. Open the dashboard and submit `Process the latest invoice from Acme Supplies`.
-2. The agent locates the sample invoice, extracts its fields and checks for duplicates.
-3. If the total exceeds `APPROVAL_THRESHOLD`, the task pauses for approval.
-4. Approve or reject it from the dashboard.
-5. On approval, FlowPilot writes the record and independently verifies it.
-6. Inspect the execution trace and final status.
+In the development session, all nine tests passed locally. Results may differ across environments or code changes; run the suite to verify the current checkout.
 
 ## API overview
 
-- `GET /api/health`
-- `GET /api/invoices`
-- `GET /api/tasks`
-- `GET /api/tasks/{task_id}`
-- `POST /api/tasks`
-- `POST /api/tasks/{task_id}/approve`
-- `POST /api/tasks/{task_id}/reject`
-- `GET /api/tasks/{task_id}/events`
-- `POST /api/demo/reset` — resets demo invoice records only; task/audit history remains.
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/health` | Health check |
+| GET | `/api/tools` | Inspect registered tools |
+| GET | `/api/invoices` | List finance sandbox records |
+| GET | `/api/tasks` | List execution tasks |
+| GET | `/api/tasks/{task_id}` | Inspect a task |
+| POST | `/api/tasks` | Submit a task |
+| POST | `/api/tasks/{task_id}/approve` | Approve a pending write |
+| POST | `/api/tasks/{task_id}/reject` | Reject a pending write |
+| GET | `/api/tasks/{task_id}/events` | Inspect the audit trail |
+| POST | `/api/demo/reset` | Clear invoice records in the demo sandbox |
 
-Example task request:
+Example request:
 
 ```json
 {
@@ -116,51 +218,65 @@ Example task request:
 }
 ```
 
-## Architecture
+## Reliability and safety
 
-`Dashboard → FastAPI → Task Runtime → Planner/Policy → Document Tool → Finance Tool → Verifier`
+FlowPilot includes several safeguards:
 
-PostgreSQL stores task state, finance records and audit events. Tool results are structured. Tasks execute synchronously in this MVP; durable asynchronous workers are a planned extension. The agent runtime is intentionally explicit so the execution path and failure behavior can be inspected during a technical interview.
+- **Approval boundary:** Invoice writes above the configured threshold pause for human approval.
+- **Duplicate checks:** Existing records are checked before a new invoice is created.
+- **Database constraint:** A uniqueness constraint provides an additional duplicate safeguard.
+- **Bounded retries:** Selected transient database errors receive a limited retry attempt.
+- **Read-back verification:** The application queries the database after a write and checks important persisted fields.
+- **Auditability:** Task execution and decisions are recorded as persistent events.
+- **Input handling:** Missing or invalid documents fail with a structured task error.
+- **Sandbox isolation:** The prototype writes only to its local finance sandbox and does not pay invoices or send external messages.
 
-## Reliability design
+These mechanisms improve inspectability and reliability, but they do not establish production-grade security or guarantee recovery from every failure.
 
-- Bounded retries for transient tool/database errors.
-- Duplicate prevention using a normalized vendor + invoice number uniqueness constraint.
-- Approval checkpoint before writing invoices above the configured threshold.
-- Independent database read-back for verification.
-- Audit events for plan, extraction, duplicate check, approval, write, retry, verification and completion.
-- Failed or unverified work is not marked completed.
+## Validation performed
+
+The development session demonstrated:
+
+- Nine automated tests passing.
+- Successful processing and database verification of sample invoices.
+- Duplicate detection when the same invoice was submitted again.
+- A high-value invoice entering `awaiting_approval` before its write.
+- Successful approval followed by persistence and verification.
+- Clean task failure for a missing document.
+- A two-request concurrency smoke test in which both tasks completed and one matching invoice record was observed.
+
+The concurrency result is a smoke test, not a comprehensive load test. Further stress testing and stronger concurrency validation are needed before production use.
 
 ## Known limitations
 
-- The prototype handles a deliberately narrow invoice workflow and executes requests synchronously (the dashboard waits for the request to finish or reach an approval checkpoint).
-- PDF extraction works for text-based PDFs; scanned PDFs require OCR, which is not included.
-- Vendor matching and task interpretation are basic; ambiguous tasks should be clarified in a future iteration.
-- The optional Ollama path needs a locally running compatible model and is not enabled by default.
-- Authentication, multi-tenant isolation, secrets management, production observability and deployment hardening are not production-ready.
-- The demo finance sandbox is not an actual accounting integration.
+FlowPilot is an engineering prototype, not a production-ready finance platform.
 
-## Next steps
+- The workflow is deliberately narrow and executes synchronously.
+- Task interpretation defaults to deterministic parsing; Ollama integration is optional.
+- Scanned PDFs require OCR, which is not included.
+- Vendor matching and ambiguous-request clarification are basic.
+- The browser connector is optional and is not part of the core invoice execution path.
+- Approval identity is a demo mechanism, not production authentication.
+- Multi-tenant isolation, role-based access control, and production secrets management are not implemented to production standards.
+- Durable background workers, resumable execution, production observability, and broad enterprise integrations remain future work.
 
-1. Add explicit clarification loops for ambiguous vendor/document matches.
-2. Add OCR and stronger document provenance.
-3. Add durable background jobs and resumable worker leases.
-4. Add authentication, role-based permissions and tenant isolation.
-5. Add model/tool evaluation datasets and measure success, recovery and verification rates.
-6. Add connector interfaces for real enterprise systems, only with authorized sandbox credentials.
+## Roadmap
 
+1. Add durable background execution and resumable task recovery.
+2. Strengthen concurrency and idempotency testing.
+3. Add explicit clarification loops for ambiguous requests.
+4. Improve document provenance and add OCR support.
+5. Introduce authentication, role-based permissions, and tenant isolation.
+6. Build evaluation datasets for task success, retries, recovery, and verification.
+7. Add authorized sandbox connectors for additional business workflows.
 
-## Founding Engineer architecture additions
+## Project documentation
 
-- `app/tooling.py` defines an explicit tool registry with required arguments and permission labels. The invoice runtime calls document read/extraction through this registry.
-- `app/policy.py` centralizes invoice-write policy and approval decisions outside the LLM.
-- `app/browser_tool.py` provides an optional Playwright-based local-page inspection connector with a hostname allowlist. Install Playwright and Chromium separately to use it.
-- `docs/ARCHITECTURE.md` explains the execution lifecycle, safety boundaries and production gaps.
-- `docs/DEMO_SCRIPT.md` provides a concise, honest walkthrough.
+- [Architecture and design decisions](docs/ARCHITECTURE.md)
+- [Demo walkthrough](docs/DEMO_SCRIPT.md)
 
-The browser connector is available as a reusable tool and is visible through `GET /api/tools`, but the current invoice workflow does not yet require browser automation to complete its task. Install optional browser support with `pip install -r requirements-browser.txt` followed by `python -m playwright install chromium` in the environment where the browser tool runs. Background workers, company-wide semantic memory, authenticated approval identities and production-grade multi-workflow planning remain future work rather than implemented features.
+## Design principle
 
+**An AI employee should not merely say that work is complete. It should execute authorized actions, verify the resulting state, and leave an inspectable record of what happened.**
 
-## Inspect registered tools
-
-Open `http://localhost:8000/api/tools` to see the tool names, descriptions, required arguments and permission labels exposed by the registry.
+FlowPilot is a focused exploration of that principle.
