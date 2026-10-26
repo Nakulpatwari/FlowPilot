@@ -1,0 +1,8 @@
+ACME SUPPLIES — INVOICE
+Invoice Number: ACME-2026-1042
+Vendor: Acme Supplies
+Invoice Date: 2026-10-18
+Due Date: 2026-11-17
+Amount Due: 1480.50
+Currency: INR
+Description: Office supplies and printer consumables

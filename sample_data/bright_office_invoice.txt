@@ -1,0 +1,8 @@
+BRIGHT OFFICE — INVOICE
+Invoice Number: BO-2026-0091
+Vendor: Bright Office
+Invoice Date: 2026-10-12
+Due Date: 2026-11-11
+Amount Due: 725.00
+Currency: INR
+Description: Stationery and office materials
